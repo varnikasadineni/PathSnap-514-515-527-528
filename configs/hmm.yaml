@@ -1,4 +1,4 @@
-# Hand-off H5 (Member C -> Member D)
+# Hand-off H5 (Member C — Vibhav -> Member D — Guru)
 # Tuned ONLY on 80 train (out-of-fold) + 10 student_test trips
 candidate_generation:
   base_radius_m: 50.0
@@ -8,16 +8,16 @@ candidate_generation:
 
 emission:
   use_classifier_prob: true
+  emission_weight: 1.0
   prob_eps: 1.0e-6
   # Distance-only fallback before Member B's model is plugged in (or if prob missing)
   sigma_m: 15.0
 
 transition:
   beta_m: 10.0
-  same_arc_bonus: 0.0
-  connected_arc_bonus: 0.0
   max_route_dist_m: 500.0
   disconnected_log_penalty: -25.0
+  bridge_max_dist_m: 400.0
 
 gap_handling:
   # Split Viterbi chain if dt between consecutive GPS points exceeds this threshold
