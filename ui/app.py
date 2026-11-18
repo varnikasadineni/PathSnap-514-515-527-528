@@ -133,8 +133,26 @@ if data:
         fmap = folium.Map(
             location=[sum(lats) / len(lats), sum(lons) / len(lons)],
             zoom_start=15,
-            tiles="OpenStreetMap",
+            tiles=None,
         )
+        # Reliable basemaps that avoid OpenStreetMap campus-IP 403 rate limits
+        folium.TileLayer(
+            tiles="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+            attr="&copy; OpenStreetMap contributors &copy; CARTO",
+            name="Carto Voyager (Default)",
+            subdomains="abcd",
+            max_zoom=20,
+        ).add_to(fmap)
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+            attr="Tiles &copy; Esri",
+            name="Esri Street Map",
+            max_zoom=19,
+        ).add_to(fmap)
+        folium.TileLayer(
+            tiles="OpenStreetMap",
+            name="OpenStreetMap",
+        ).add_to(fmap)
 
         gps_layer = folium.FeatureGroup(name="Raw GPS Observations (.track)", show=True)
         stride = max(1, len(gps_pts) // 1200)

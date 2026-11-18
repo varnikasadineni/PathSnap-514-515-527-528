@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 import requests
@@ -39,6 +40,7 @@ def _assert_prediction_payload(tid: str, data: dict) -> dict:
 
 def run_inprocess() -> None:
     load_server_state()
+    dummy_req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
 
     r_root = root()
     assert r_root["n_trips"] == 10, r_root
@@ -46,19 +48,19 @@ def run_inprocess() -> None:
     assert r_health["status"] == "ok", r_health
     print("HEALTH:", r_health)
 
-    trips = get_trips()["trips"]
+    trips = get_trips(dummy_req)["trips"]
     assert len(trips) == 10, f"Expected 10 evaluation trips, got {len(trips)}"
 
     # Verify 404 on unknown trip
     try:
-        predict_endpoint("does_not_exist")
+        predict_endpoint("does_not_exist", dummy_req)
         raise AssertionError("Expected HTTPException(404) for invalid trip_id")
     except HTTPException as exc:
         assert exc.status_code == 404
 
     top1s, conts, lenf1s, times = [], [], [], []
     for tid in trips:
-        data = predict_endpoint(tid)
+        data = predict_endpoint(tid, dummy_req)
         m = _assert_prediction_payload(tid, data)
         top1s.append(m["observation_top1_accuracy"])
         conts.append(m["route_continuity"])

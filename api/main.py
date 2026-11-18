@@ -25,7 +25,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 
@@ -141,9 +141,10 @@ def health() -> dict:
 
 
 @app.get("/trips")
-def get_trips() -> dict:
+def get_trips(request: Request) -> dict:
     trip_ids = sorted(STATE["trip_map"].keys())
-    logger.info("GET  /trips -> returned %d trips", len(trip_ids))
+    client_ip = request.client.host if (request is not None and request.client) else "local"
+    logger.info("client=%s | GET  /trips -> returned %d trips", client_ip, len(trip_ids))
     return {"trips": trip_ids}
 
 
@@ -194,13 +195,14 @@ def _score_server_side(
 
 
 @app.post("/predict/{trip_id}")
-def predict_endpoint(trip_id: str) -> dict:
+def predict_endpoint(trip_id: str, request: Request) -> dict:
+    client_ip = request.client.host if (request is not None and request.client) else "local"
     trip_dir: Optional[Path] = STATE["trip_map"].get(trip_id)
     if trip_dir is None:
-        logger.warning("POST /predict/%s -> 404 Not Found", trip_id)
+        logger.warning("client=%s | POST /predict/%s -> 404 Not Found", client_ip, trip_id)
         raise HTTPException(status_code=404, detail=f"Trip '{trip_id}' not found.")
 
-    logger.info("POST /predict/%s -> Inference STARTED...", trip_id)
+    logger.info("client=%s | POST /predict/%s -> Inference STARTED...", client_ip, trip_id)
     try:
         result = predict_trip(
             trip_dir=trip_dir,
@@ -209,7 +211,7 @@ def predict_endpoint(trip_id: str) -> dict:
             feature_cols=STATE["model_cfg"].get("feature_columns"),
         )
     except Exception as exc:
-        logger.exception("POST /predict/%s -> FAILED: %s", trip_id, exc)
+        logger.exception("client=%s | POST /predict/%s -> FAILED: %s", client_ip, trip_id, exc)
         raise HTTPException(status_code=500, detail=f"Inference failed for trip '{trip_id}': {exc}") from exc
 
     # Server-side-only evaluation (ground-truth never leaves Laptop 1)
@@ -220,8 +222,9 @@ def predict_endpoint(trip_id: str) -> dict:
     )
 
     logger.info(
-        "POST /predict/%s -> 200 OK | mode=%s | pts=%d | arcs=%d | time=%.3fs | "
+        "client=%s | POST /predict/%s -> 200 OK | mode=%s | pts=%d | arcs=%d | time=%.3fs | "
         "Top1=%s | LenF1=%s | Cont=%s",
+        client_ip,
         trip_id,
         result["mode"],
         len(result["points"]),
