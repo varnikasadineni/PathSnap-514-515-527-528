@@ -1,0 +1,27 @@
+# Hand-off H4 (Member B -> Member C & D)
+# Updated after model selection and Optuna Bayesian HPO
+random_seed: 42
+cv_folds: 5
+cv_strategy: "GroupKFold(n_splits=5) grouped by trip_id"
+
+selected_model:
+  name: "TBD_after_5_model_comparison"
+  family: "TBD"
+  artifact_path: "models/final_model.joblib"
+
+# Canonical ordered feature list agreed between Member A and Member B
+feature_columns:
+  - "dist_m"
+  - "proj_frac"
+  - "arc_len_m"
+  - "heading_diff_deg"
+  - "gps_speed_mps"
+  - "dt_sec"
+  - "dist_rank"
+  - "dist_gap_to_best_m"
+  - "cand_count"
+  - "from_node_deg"
+  - "to_node_deg"
+  - "prev_connected"
+
+hyperparameters: {}

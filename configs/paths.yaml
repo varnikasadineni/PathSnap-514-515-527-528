@@ -1,0 +1,15 @@
+# Configurable dataset & artifact paths (override via environment variables on demo day)
+data:
+  train_dir: "data/raw/train"
+  student_test_dir: "data/raw/student_test"
+  # On demo day, point evaluator_test_dir (or env var PATHSNAP_EVAL_DIR) to the 10 evaluator trips
+  evaluator_test_dir: "data/raw/evaluator_test"
+  processed_dir: "data/processed"
+
+artifacts:
+  model_path: "models/final_model.joblib"
+  model_config: "configs/model.yaml"
+  hmm_config: "configs/hmm.yaml"
+  results_dir: "results"
+  figures_dir: "reports/figures"
+  maps_dir: "reports/maps"
