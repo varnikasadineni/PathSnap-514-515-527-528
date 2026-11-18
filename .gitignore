@@ -23,3 +23,6 @@ data/processed/*.csv
 Thumbs.db
 .vscode/
 .idea/
+results/probs/
+models/KNN.joblib
+models/RandomForest.joblib
