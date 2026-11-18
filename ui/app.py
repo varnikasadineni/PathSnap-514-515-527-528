@@ -90,7 +90,7 @@ if data:
         fmap = folium.Map(
             location=[sum(lats) / len(lats), sum(lons) / len(lons)],
             zoom_start=15,
-            tiles="CartoDB positron",
+            tiles="OpenStreetMap",
         )
 
         pred_layer = folium.FeatureGroup(name="Predicted Route (PathSnap)", show=True)

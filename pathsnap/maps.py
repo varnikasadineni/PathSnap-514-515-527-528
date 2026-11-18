@@ -30,7 +30,7 @@ def build_trip_folium_map(
     """Create an interactive Folium map with separate colored layers, legend, and LayerControl."""
     center_lat = float(trip.track["lat"].mean())
     center_lon = float(trip.track["lon"].mean())
-    fmap = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="CartoDB positron")
+    fmap = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="OpenStreetMap")
 
     node_lat = trip.nodes["lat"].to_numpy()
     node_lon = trip.nodes["lon"].to_numpy()
