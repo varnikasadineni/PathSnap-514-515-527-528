@@ -1,27 +1,39 @@
-# Hand-off H4 (Member B -> Member C & D)
-# Updated after model selection and Optuna Bayesian HPO
 random_seed: 42
 cv_folds: 5
-cv_strategy: "GroupKFold(n_splits=5) grouped by trip_id"
-
+cv_strategy: GroupKFold(n_splits=5) grouped by trip_id
 selected_model:
-  name: "TBD_after_5_model_comparison"
-  family: "TBD"
-  artifact_path: "models/final_model.joblib"
-
-# Canonical ordered feature list agreed between Member A and Member B
+  name: HistGradientBoosting
+  family: Boosting
+  artifact_path: models/final_model.joblib
 feature_columns:
-  - "dist_m"
-  - "proj_frac"
-  - "arc_len_m"
-  - "heading_diff_deg"
-  - "gps_speed_mps"
-  - "dt_sec"
-  - "dist_rank"
-  - "dist_gap_to_best_m"
-  - "cand_count"
-  - "from_node_deg"
-  - "to_node_deg"
-  - "prev_connected"
-
+- dist_m
+- proj_frac
+- arc_len_m
+- heading_diff_deg
+- gps_speed_mps
+- dt_sec
+- dist_rank
+- dist_gap_to_best_m
+- cand_count
+- from_node_deg
+- to_node_deg
+- prev_connected
 hyperparameters: {}
+model_name: HistGradientBoosting
+model_family: Boosting
+model_path: models/final_model.joblib
+label_column: label
+best_params:
+  max_iter: 550
+  learning_rate: 0.0500593360411714
+  max_leaf_nodes: 73
+  max_depth: 6
+  min_samples_leaf: 197
+  l2_regularization: 1.1925527527380104
+  max_features: 0.645551186482927
+best_cv_top1: 0.803940653577165
+excluded_train_trips:
+- '00000033'
+- '00000054'
+oof_probs_path: results/probs_train_oof.parquet
+student_test_probs_path: results/probs_student_test.parquet
