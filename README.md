@@ -1,7 +1,7 @@
 # PathSnap — Distributed Map-Matching & Route Reconstruction
 
 **PES University · UE24CS352A: Machine Learning Hackathon**  
-**Team Members:** Guru, Vibhav, Varnika, Vaishnavi
+**Team Members:** Vaishnavi (A — Data), Varnika (B — Models), Vibhav (C — HMM/Viterbi), Guru (D — API/UI/Report)
 
 PathSnap is a two-laptop distributed machine learning + HMM/Viterbi system that reconstructs realistic vehicle trajectories by snapping noisy GPS observations onto a road network.
 
@@ -47,10 +47,10 @@ PathSnap-514-515-527-528/
 
 | Member | Branch | Owns | Key Hand-off |
 | :--- | :--- | :--- | :--- |
-| **Member A (Data)** | `a-data` | `data.py`, `candidates.py`, `features.py`, `01_eda.ipynb` | **H1** `load_trip()`, **H2** `features_*.parquet` + `points_*.parquet` |
-| **Member B (Models)** | `b-models` | `metrics.py`, `train.py`, `02_models.ipynb`, Optuna HPO | **H3** `metrics.py`, **H4** `final_model.joblib` + `probs_*.parquet` |
-| **Member C (HMM/Viz)** | `c-hmm` | `hmm.py`, `pipeline.py`, `maps.py`, `03_hmm_analysis.ipynb` | **H5** `predict_trip(trip_dir)` + Folium HTML maps |
-| **Member D (App/Report)** | `d-app` | `api/main.py`, `ui/app.py`, two-laptop LAN, final PDF | Live 2-laptop deployment + consolidated PDF |
+| **Member A — Vaishnavi (Data)** | `a-data` | `data.py`, `candidates.py`, `features.py`, `01_eda.ipynb` | **H1** `load_trip()`, **H2** `features_*.parquet` + `points_*.parquet` |
+| **Member B — Varnika (Models)** | `b-models` | `metrics.py`, `train.py`, `02_models.ipynb`, Optuna HPO | **H3** `metrics.py`, **H4** `final_model.joblib` + `probs_*.parquet` |
+| **Member C — Vibhav (HMM/Viz)** | `c-hmm` | `hmm.py`, `pipeline.py`, `maps.py`, `03_hmm_analysis.ipynb` | **H5** `predict_trip(trip_dir)` + Folium HTML maps |
+| **Member D — Guru (App/Report)** | `d-app` | `api/main.py`, `ui/app.py`, two-laptop LAN, final PDF | Live 2-laptop deployment + consolidated PDF |
 
 ### Agreed `predict_trip(trip_dir)` Output Format (H5)
 `predict_trip(trip_dir)` **never reads `.route`** and returns:

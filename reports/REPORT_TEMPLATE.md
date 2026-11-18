@@ -1,13 +1,13 @@
 # PathSnap: Distributed Map-Matching & Route Reconstruction
 **PES University — UE24CS352A: Machine Learning Hackathon Technical Report**  
-**Team:** Guru, Vibhav, Varnika, Vaishnavi  
+**Team:** Vaishnavi (A — Data), Varnika (B — Models), Vibhav (C — HMM/Viterbi), Guru (D — API/UI/Report)  
 **GitHub Repository:** https://github.com/varnikasadineni/PathSnap-514-515-527-528
 
 > **Checklist before exporting PDF:** Every number in this report must match a CSV in `results/`, every plot must come from actual experiment outputs in `reports/figures/`, and every team member must be able to explain every section during the viva.
 
 ---
 
-## 2.2 Dataset Understanding and Exploratory Data Analysis *(Owner: Member A)*
+## 2.2 Dataset Understanding and Exploratory Data Analysis *(Owner: Member A — Vaishnavi)*
 
 *Clearly state which partition (`train` = 80 trips, `student_test` = 10 trips; `evaluator_test` untouched) was used for each table/plot.*
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. Model Experimentation and Comparison *(Owner: Member B)*
+## 3. Model Experimentation and Comparison *(Owner: Member B — Varnika)*
 
 ### 3.1 Overall Model Comparison Table *(from `results/model_comparison.csv`)*
 
@@ -67,7 +67,7 @@
 
 ---
 
-## 4. Bayesian Hyperparameter Optimisation *(Owner: Member B)*
+## 4. Bayesian Hyperparameter Optimisation *(Owner: Member B — Varnika)*
 
 1. **Hyperparameters searched:**
 2. **Ranges / distributions:**
@@ -85,7 +85,7 @@
 
 ---
 
-## 5. HMM and Viterbi Route Reconstruction *(Owner: Member C)*
+## 5. HMM and Viterbi Route Reconstruction *(Owner: Member C — Vibhav)*
 
 1. **Hidden states:**
 2. **Emission probabilities:**
@@ -103,14 +103,14 @@
 
 ---
 
-## 6. Geographical Visualisation Using Folium *(Owner: Member C)*
+## 6. Geographical Visualisation Using Folium *(Owner: Member C — Vibhav)*
 
 - Screenshots of interactive Folium maps showing **Raw GPS observations**, **Local Road Network**, **Reference Route**, and **Predicted Route** with distinct colors, legend, and LayerControl.
 - Reference paths to committed interactive HTML maps in `reports/maps/` and generation script `pathsnap/maps.py`.
 
 ---
 
-## 7. API, UI and Two-Laptop Deployment *(Owner: Member D)*
+## 7. API, UI and Two-Laptop Deployment *(Owner: Member D — Guru)*
 
 - Architecture overview (Laptop 1 FastAPI + model/HMM/server-side eval vs. Laptop 2 Streamlit UI over LAN; zero ground-truth exposure to model or UI).
 - **Screenshots of working UI** on Laptop 2 showing trip selection, map, and metrics.
