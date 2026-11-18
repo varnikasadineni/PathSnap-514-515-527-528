@@ -51,7 +51,7 @@ with st.sidebar:
     except Exception as exc:
         st.error(f"API Unreachable: {exc}")
 
-    if st.button("Refresh Connection & Trips", use_container_width=True):
+    if st.button("Refresh Connection & Trips", width="stretch"):
         st.rerun()
 
 # Fetch the 10 evaluation trip IDs dynamically from Laptop 1
@@ -78,7 +78,7 @@ with col_sel:
 with col_btn:
     st.write("")
     st.write("")
-    run_clicked = st.button("Reconstruct Route", type="primary", use_container_width=True)
+    run_clicked = st.button("Reconstruct Route", type="primary", width="stretch")
 
 if run_clicked:
     with st.spinner(f"Sending trip `{selected_trip}` to Laptop 1 API (`{api_url}/predict/{selected_trip}`)..."):
@@ -136,33 +136,34 @@ if data:
             tiles="OpenStreetMap",
         )
 
+        gps_layer = folium.FeatureGroup(name="Raw GPS Observations (.track)", show=True)
+        stride = max(1, len(gps_pts) // 1200)
+        for lat, lon in gps_pts[::stride]:
+            folium.CircleMarker(
+                location=[lat, lon],
+                radius=2.2,
+                color="#1565c0",
+                fill=True,
+                fill_opacity=0.65,
+            ).add_to(gps_layer)
+        gps_layer.add_to(fmap)
+
+        # Draw predicted route ON TOP of raw GPS dots so it pops at every zoom level
         pred_layer = folium.FeatureGroup(name="Predicted Route (PathSnap)", show=True)
         for seg in pred_arcs:
             folium.PolyLine(
                 locations=seg["coords"],
                 color="#d32f2f",
                 weight=4.5,
-                opacity=0.9,
+                opacity=0.95,
             ).add_to(pred_layer)
         pred_layer.add_to(fmap)
 
-        gps_layer = folium.FeatureGroup(name="Raw GPS Observations (.track)", show=True)
-        stride = max(1, len(gps_pts) // 1200)
-        for lat, lon in gps_pts[::stride]:
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=2.5,
-                color="#1565c0",
-                fill=True,
-                fill_opacity=0.75,
-            ).add_to(gps_layer)
-        gps_layer.add_to(fmap)
-
         legend_html = """
         <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
-                    background-color: white; padding: 8px 12px; border-radius: 6px;
+                    background-color: white; color: #111111; padding: 8px 12px; border-radius: 6px;
                     border: 1px solid #bbb; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);">
-          <b>PathSnap Map</b><br>
+          <b style="color:#111111;">PathSnap Map</b><br>
           <span style="color:#1565c0;">&#9679;</span> Raw GPS Observations<br>
           <span style="color:#d32f2f;">&#9473;</span> Predicted Route
         </div>
@@ -187,7 +188,7 @@ if st.session_state["history"]:
     st.divider()
     st.subheader("Evaluated Trips Summary (Current Session)")
     hist_df = pd.DataFrame(st.session_state["history"])
-    st.dataframe(hist_df, use_container_width=True, hide_index=True)
+    st.dataframe(hist_df, width="stretch", hide_index=True)
     if len(hist_df) > 1:
         s1, s2, s3, s4 = st.columns(4)
         s1.metric("Trips Tested", len(hist_df))
