@@ -3,15 +3,23 @@
 Run on Laptop 1:
     uvicorn api.main:app --host 0.0.0.0 --port 8000
 
-Environment overrides (no code edits needed on demo day):
-    PATHSNAP_EVAL_DIR   Folder containing the 10 evaluation trips (default: student_test for dev,
-                        switch to evaluator_test on demo day)
-    PATHSNAP_MODEL_PATH Path to final_model.joblib
+Environment overrides (no code changes needed on demo day):
+    PATHSNAP_EVAL_DIR    Folder with the 10 evaluation trips (defaults to
+                         data/raw/evaluator_test if present & non-empty,
+                         otherwise falls back to data/raw/student_test for dev).
+    PATHSNAP_MODEL_PATH  Path to trained final_model.joblib.
+
+Strict integrity guarantees:
+    - predict_trip() NEVER reads .route files.
+    - Reference .route files are loaded ONLY inside _score_server_side() on Laptop 1.
+    - Ground-truth arc IDs / coordinates are NEVER returned in any JSON response.
+    - Every request logs clearly to stdout/CMD on Laptop 1 for evaluator inspection.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
@@ -21,7 +29,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 
-from pathsnap.candidates import align_track_to_route_monotonic
+from pathsnap.candidates import align_track_to_route_dp
 from pathsnap.config import REPO_ROOT, load_yaml
 from pathsnap.data import list_trip_dirs, load_trip
 from pathsnap.metrics import route_continuity, sequence_route_metrics
@@ -29,22 +37,15 @@ from pathsnap.pipeline import load_trained_model_if_exists, predict_trip
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
+    format="%(asctime)s | %(levelname)-5s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("pathsnap.api")
-
-app = FastAPI(title="PathSnap Map-Matching API", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Server-side state initialized once at startup
 STATE: dict = {
     "model": None,
+    "model_path": "",
     "model_cfg": {},
     "hmm_cfg": {},
     "eval_dir": None,
@@ -59,12 +60,15 @@ def _resolve_eval_dir(paths_cfg: dict) -> Path:
     eval_path = REPO_ROOT / paths_cfg["data"]["evaluator_test_dir"]
     if eval_path.exists() and list_trip_dirs(eval_path):
         return eval_path
-    # Development fallback to student_test if evaluator_test folder is not yet dropped in
-    return REPO_ROOT / paths_cfg["data"]["student_test_dir"]
+    st_path = REPO_ROOT / paths_cfg["data"]["student_test_dir"]
+    if st_path.exists() and list_trip_dirs(st_path):
+        return st_path
+    alt = REPO_ROOT / "data" / "raw" / "Student folder" / "student_test"
+    return alt
 
 
-@app.on_event("startup")
-def startup_event() -> None:
+def load_server_state() -> None:
+    """Load model, configs, and available trip folders into server memory."""
     paths_cfg = load_yaml(REPO_ROOT / "configs" / "paths.yaml")
     model_cfg = load_yaml(REPO_ROOT / "configs" / "model.yaml")
     hmm_cfg = load_yaml(REPO_ROOT / "configs" / "hmm.yaml")
@@ -76,16 +80,53 @@ def startup_event() -> None:
     trip_dirs = list_trip_dirs(eval_dir)
 
     STATE["model"] = model
+    STATE["model_path"] = str(model_path)
     STATE["model_cfg"] = model_cfg
     STATE["hmm_cfg"] = hmm_cfg
     STATE["eval_dir"] = eval_dir
     STATE["trip_map"] = {d.name: d for d in trip_dirs}
 
-    logger.info("=" * 64)
-    logger.info("PathSnap API STARTED on Laptop 1")
-    logger.info("  Eval directory : %s (%d trips)", eval_dir, len(trip_dirs))
-    logger.info("  Model loaded   : %s", "YES" if model is not None else "NO (distance-HMM fallback)")
-    logger.info("=" * 64)
+    mode_str = "classifier+hmm" if model is not None else "distance_hmm_fallback"
+    logger.info("=" * 72)
+    logger.info("PATHSNAP API READY (Laptop 1 — Inference & Server-Side Evaluation)")
+    logger.info("  Eval folder    : %s (%d trips)", eval_dir, len(trip_dirs))
+    logger.info("  Trip IDs       : %s", ", ".join(sorted(STATE["trip_map"].keys())))
+    logger.info("  Pipeline mode  : %s (model=%s)", mode_str, model_path if model is not None else "not loaded yet")
+    logger.info("  HMM beta / gap : beta_m=%s, split_gap_sec=%s",
+                hmm_cfg.get("transition", {}).get("beta_m"),
+                hmm_cfg.get("gap_handling", {}).get("split_gap_sec"))
+    logger.info("=" * 72)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_server_state()
+    yield
+
+
+app = FastAPI(
+    title="PathSnap Map-Matching API",
+    description="Distributed map-matching & route reconstruction backend (Laptop 1).",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+def root() -> dict:
+    return {
+        "service": "PathSnap Distributed Map-Matching API",
+        "endpoints": ["GET /health", "GET /trips", "POST /predict/{trip_id}"],
+        "n_trips": len(STATE["trip_map"]),
+        "mode": "classifier+hmm" if STATE["model"] is not None else "distance_hmm_fallback",
+    }
 
 
 @app.get("/health")
@@ -95,46 +136,60 @@ def health() -> dict:
         "eval_dir": str(STATE["eval_dir"]),
         "n_trips": len(STATE["trip_map"]),
         "model_loaded": STATE["model"] is not None,
+        "mode": "classifier+hmm" if STATE["model"] is not None else "distance_hmm_fallback",
     }
 
 
 @app.get("/trips")
 def get_trips() -> dict:
     trip_ids = sorted(STATE["trip_map"].keys())
-    logger.info("GET /trips -> returning %d trip IDs", len(trip_ids))
+    logger.info("GET  /trips -> returned %d trips", len(trip_ids))
     return {"trips": trip_ids}
 
 
-def _score_server_side(trip_dir: Path, pred_arcs: list[int]) -> dict:
-    """Server-side-only evaluation against private .route file.
+def _score_server_side(
+    trip_dir: Path,
+    pred_arcs: list[int],
+    reconstructed_route: Optional[list[int]] = None,
+) -> dict:
+    """Server-side-only evaluation against the private .route file.
 
-    Ground-truth .route is NEVER returned in the API response and NEVER passed to predict_trip().
+    Uses:
+      - `pred_arcs` (1 per GPS point) for observation_top1_accuracy & point_on_route_rate
+      - `reconstructed_route` (continuous bridged arc sequence) for route_continuity,
+        route_length_f1, and route_arc_f1
+    Ground-truth .route NEVER leaves Laptop 1.
     """
     trip = load_trip(trip_dir, load_route=True)
+    seq_for_route = reconstructed_route if reconstructed_route else pred_arcs
+
     if trip.route is None or len(trip.route) == 0:
         return {
-            "route_continuity": route_continuity(pred_arcs, trip.arcs),
             "observation_top1_accuracy": None,
+            "route_continuity": round(route_continuity(seq_for_route, trip.arcs), 4),
             "route_length_f1": None,
             "route_arc_f1": None,
             "point_on_route_rate": None,
             "note": "No server-side .route reference file found.",
         }
 
-    seq_metrics = sequence_route_metrics(pred_arcs, trip.route, trip.arcs)
+    # Sequence metrics on the continuous reconstructed route
+    bridged_seq = sequence_route_metrics(seq_for_route, trip.route, trip.arcs)
+    # Point-on-route rate on the per-observation predictions
+    raw_seq = sequence_route_metrics(pred_arcs, trip.route, trip.arcs)
 
-    # Monotonic alignment of GPS observations onto server-side .route for observation-level accuracy
-    aligned = align_track_to_route_monotonic(trip)
+    # Globally optimal monotonic DP alignment (identical to train.py & eval_hmm.py)
+    aligned = align_track_to_route_dp(trip)
     true_arcs = aligned["true_arc"].to_numpy()
     pred_arr = np.asarray(pred_arcs, dtype=np.int32)
     obs_acc = float(np.mean(pred_arr == true_arcs)) if len(true_arcs) == len(pred_arr) else None
 
     return {
         "observation_top1_accuracy": round(obs_acc, 4) if obs_acc is not None else None,
-        "route_continuity": round(seq_metrics["route_continuity"], 4),
-        "route_length_f1": round(seq_metrics["route_length_f1"], 4),
-        "route_arc_f1": round(seq_metrics["route_arc_f1"], 4),
-        "point_on_route_rate": round(seq_metrics["point_on_route_rate"], 4),
+        "route_continuity": round(bridged_seq["route_continuity"], 4),
+        "route_length_f1": round(bridged_seq["route_length_f1"], 4),
+        "route_arc_f1": round(bridged_seq["route_arc_f1"], 4),
+        "point_on_route_rate": round(raw_seq["point_on_route_rate"], 4),
     }
 
 
@@ -145,31 +200,42 @@ def predict_endpoint(trip_id: str) -> dict:
         logger.warning("POST /predict/%s -> 404 Not Found", trip_id)
         raise HTTPException(status_code=404, detail=f"Trip '{trip_id}' not found.")
 
-    logger.info("POST /predict/%s -> Inference started...", trip_id)
-    result = predict_trip(
-        trip_dir=trip_dir,
-        model=STATE["model"],
-        hmm_cfg=STATE["hmm_cfg"],
-        feature_cols=STATE["model_cfg"].get("feature_columns"),
-    )
+    logger.info("POST /predict/%s -> Inference STARTED...", trip_id)
+    try:
+        result = predict_trip(
+            trip_dir=trip_dir,
+            model=STATE["model"],
+            hmm_cfg=STATE["hmm_cfg"],
+            feature_cols=STATE["model_cfg"].get("feature_columns"),
+        )
+    except Exception as exc:
+        logger.exception("POST /predict/%s -> FAILED: %s", trip_id, exc)
+        raise HTTPException(status_code=500, detail=f"Inference failed for trip '{trip_id}': {exc}") from exc
 
-    # Server-side-only scoring (ground-truth never leaves Laptop 1)
-    metrics = _score_server_side(trip_dir, result["predicted_arcs"])
+    # Server-side-only evaluation (ground-truth never leaves Laptop 1)
+    metrics = _score_server_side(
+        trip_dir=trip_dir,
+        pred_arcs=result["predicted_arcs"],
+        reconstructed_route=result["compressed_route"],
+    )
 
     logger.info(
-        "POST /predict/%s -> DONE | mode=%s | time=%.3fs | obs_acc=%s | len_F1=%s | continuity=%s",
+        "POST /predict/%s -> 200 OK | mode=%s | pts=%d | arcs=%d | time=%.3fs | "
+        "Top1=%s | LenF1=%s | Cont=%s",
         trip_id,
         result["mode"],
+        len(result["points"]),
+        len(result["compressed_route"]),
         result["runtime_sec"],
-        metrics.get("observation_top1_accuracy"),
-        metrics.get("route_length_f1"),
-        metrics.get("route_continuity"),
+        f"{metrics['observation_top1_accuracy']*100:.2f}%" if metrics["observation_top1_accuracy"] is not None else "N/A",
+        f"{metrics['route_length_f1']*100:.2f}%" if metrics["route_length_f1"] is not None else "N/A",
+        f"{metrics['route_continuity']*100:.2f}%" if metrics["route_continuity"] is not None else "N/A",
     )
 
-    # Return ONLY predicted route + scalar evaluation metrics (never .route)
+    # Strictly return ONLY raw GPS points, predicted route geometry, diagnostics & scalar metrics
     return {
         "trip_id": result["trip_id"],
-        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "mode": result["mode"],
         "runtime_sec": result["runtime_sec"],
         "n_points": len(result["points"]),
