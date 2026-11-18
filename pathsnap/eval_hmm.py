@@ -221,6 +221,69 @@ def evaluate_baseline_student_test() -> pd.DataFrame:
     return df_out
 
 
+def _generate_subset_oof_probs(
+    trip_dirs: list[Path],
+    cand_cfg: dict,
+    model_cfg: dict,
+) -> tuple[list[tuple[TripData, np.ndarray, pd.DataFrame]], dict[str, pd.DataFrame]]:
+    """Build genuine GroupKFold(5) OOF probabilities on `trip_dirs` using Member B's tuned params.
+
+    Used automatically when results/probs_train_oof.parquet is not present locally (since large
+    parquet files are gitignored). Every trip is scored strictly out-of-fold (zero leakage).
+    """
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.model_selection import GroupKFold
+
+    feature_cols = model_cfg.get("feature_columns") or FEATURE_COLUMNS
+    best_params = dict(model_cfg.get("best_params") or {})
+    best_params.setdefault("class_weight", "balanced")
+    best_params.setdefault("random_state", RANDOM_SEED)
+
+    print(f"Building features & 5-fold GroupKFold OOF probabilities on {len(trip_dirs)} train trips...")
+    pre_trips = []
+    feat_frames = []
+    for tdir in trip_dirs:
+        trip = load_trip(tdir, load_route=True)
+        aligned = align_track_to_route_monotonic(trip)
+        cand_df = generate_candidates_for_trip(
+            trip,
+            base_radius_m=float(cand_cfg["base_radius_m"]),
+            fallback_radii_m=tuple(cand_cfg["fallback_radii_m"]),
+            min_candidates=int(cand_cfg["min_candidates"]),
+            max_candidates=int(cand_cfg["max_candidates"]),
+        )
+        feat_df = build_features_for_trip(trip, cand_df)
+        true_by_pt = aligned.set_index("point_idx")["true_arc"]
+        feat_df["label"] = (
+            feat_df["arc_id"].to_numpy() == true_by_pt.reindex(feat_df["point_idx"]).to_numpy()
+        ).astype(np.int8)
+        pre_trips.append((trip, aligned["true_arc"].to_numpy(), feat_df))
+        feat_frames.append(feat_df[["trip_id", "point_idx", "arc_id", "label"] + feature_cols])
+
+    all_df = pd.concat(feat_frames, ignore_index=True)
+    X = all_df[feature_cols].to_numpy(dtype=np.float32)
+    y = all_df["label"].to_numpy(dtype=np.int32)
+    groups = all_df["trip_id"].to_numpy()
+
+    gkf = GroupKFold(n_splits=min(5, len(trip_dirs)))
+    oof = np.zeros(len(all_df), dtype=np.float64)
+    for fold_i, (tr_idx, va_idx) in enumerate(gkf.split(X, y, groups), start=1):
+        clf = HistGradientBoostingClassifier(**best_params)
+        clf.fit(X[tr_idx], y[tr_idx])
+        oof[va_idx] = clf.predict_proba(X[va_idx])[:, 1]
+        print(f"  OOF fold {fold_i}/5 done ({len(va_idx):,} candidate rows)")
+
+    all_df["prob"] = oof
+    probs_by_trip = {tid: g[["point_idx", "arc_id", "prob"]].copy() for tid, g in all_df.groupby("trip_id", sort=False)}
+
+    preloaded = []
+    for trip, true_arcs, feat_df in pre_trips:
+        merged = feat_df.merge(probs_by_trip[trip.trip_id], on=["point_idx", "arc_id"], how="left")
+        merged["prob"] = merged["prob"].fillna(1e-6).astype(np.float64)
+        preloaded.append((trip, true_arcs, merged))
+    return preloaded, probs_by_trip
+
+
 def tune_hmm_on_train_oof(
     probs_path: Path,
     max_train_trips: int = 20,
@@ -231,42 +294,45 @@ def tune_hmm_on_train_oof(
     Tunes emission_weight, beta_m, split_gap_sec, and disconnected_log_penalty
     strictly on training OOF predictions (zero student_test or evaluator_test leakage!).
     """
-    if not probs_path.exists():
-        raise FileNotFoundError(
-            f"OOF probabilities file not found: {probs_path}\n"
-            "Wait for Member B (Varnika) Hand-off H4: results/probs_train_oof.parquet"
-        )
-
     paths_cfg = load_yaml(REPO_ROOT / "configs" / "paths.yaml")
+    model_cfg = load_yaml(REPO_ROOT / "configs" / "model.yaml")
     hmm_cfg = load_yaml(REPO_ROOT / "configs" / "hmm.yaml")
     cand_cfg = hmm_cfg["candidate_generation"]
     trans_cfg = hmm_cfg["transition"]
-
-    probs_df = pd.read_parquet(probs_path)
-    probs_df["trip_id"] = probs_df["trip_id"].astype(str)
-    avail_tids = sorted(probs_df["trip_id"].unique().tolist())
-
     train_dir = _resolve_split_dir(paths_cfg, "train")
-    trip_dirs = [d for d in list_trip_dirs(train_dir) if d.name in set(avail_tids)]
-    if not trip_dirs:
-        raise RuntimeError(f"No matching train trip folders found in {train_dir} for {probs_path}")
 
-    # Deterministic subset of training trips for fast tuning (0 = use all 80 trips)
+    excluded = set(str(x) for x in model_cfg.get("excluded_train_trips", ["00000033", "00000054"]))
+
+    if probs_path.exists():
+        probs_df = pd.read_parquet(probs_path)
+        probs_df["trip_id"] = probs_df["trip_id"].astype(str)
+        avail_tids = set(probs_df["trip_id"].unique().tolist())
+        trip_dirs = [d for d in list_trip_dirs(train_dir) if d.name in avail_tids and d.name not in excluded]
+    else:
+        print(f"Note: {probs_path.name} not on disk (gitignored); computing genuine 5-fold GroupKFold OOF on train subset...")
+        trip_dirs = [d for d in list_trip_dirs(train_dir) if d.name not in excluded]
+        probs_df = None
+
+    if not trip_dirs:
+        raise RuntimeError(f"No matching train trip folders found in {train_dir}")
+
+    # Deterministic subset of training trips for fast tuning (0 = use all)
     if max_train_trips > 0 and len(trip_dirs) > max_train_trips:
         rng = np.random.default_rng(RANDOM_SEED)
-        # Exclude extreme 130m off-route anomaly trips 00000033 / 00000054 from tuning objective
-        normal_dirs = [d for d in trip_dirs if d.name not in {"00000033", "00000054"}]
-        pick_idx = sorted(rng.choice(len(normal_dirs), size=min(max_train_trips, len(normal_dirs)), replace=False))
-        trip_dirs = [normal_dirs[i] for i in pick_idx]
+        pick_idx = sorted(rng.choice(len(trip_dirs), size=min(max_train_trips, len(trip_dirs)), replace=False))
+        trip_dirs = [trip_dirs[i] for i in pick_idx]
 
-    print(f"Preloading {len(trip_dirs)} train trips + OOF probabilities for HMM tuning...")
-    preloaded = []
-    probs_by_trip = {tid: g for tid, g in probs_df.groupby("trip_id", sort=False)}
-    for tdir in trip_dirs:
-        trip = load_trip(tdir, load_route=True)
-        aligned = align_track_to_route_monotonic(trip)
-        cand_df = _load_or_build_candidates_with_probs(trip, cand_cfg, probs_for_trip=probs_by_trip[trip.trip_id])
-        preloaded.append((trip, aligned["true_arc"].to_numpy(), cand_df))
+    if probs_df is not None:
+        print(f"Preloading {len(trip_dirs)} train trips + OOF probabilities for HMM tuning...")
+        preloaded = []
+        probs_by_trip = {tid: g for tid, g in probs_df.groupby("trip_id", sort=False)}
+        for tdir in trip_dirs:
+            trip = load_trip(tdir, load_route=True)
+            aligned = align_track_to_route_monotonic(trip)
+            cand_df = _load_or_build_candidates_with_probs(trip, cand_cfg, probs_for_trip=probs_by_trip[trip.trip_id])
+            preloaded.append((trip, aligned["true_arc"].to_numpy(), cand_df))
+    else:
+        preloaded, _ = _generate_subset_oof_probs(trip_dirs, cand_cfg, model_cfg)
 
     # Focused grid over the 4 most impactful HMM parameters
     grid_emission_w = [0.5, 1.0, 2.0, 3.5]
