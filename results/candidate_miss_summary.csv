@@ -1,0 +1,5 @@
+scope,trips,points,candidate_rows,miss_pct_actual,miss_pct_r20m,miss_pct_r30m,miss_pct_r40m,miss_pct_r50m,miss_pct_r75m,miss_pct_r100m,miss_pct_r150m
+all trips,90,227577,2520331,6.21,13.473,11.518,10.692,10.23,9.409,9.032,4.082
+student_test,10,19160,220529,0.402,2.876,0.767,0.214,0.141,0.11,0.089,0.016
+train,80,208417,2299802,6.744,14.447,12.507,11.655,11.158,10.264,9.854,4.456
+"all trips except off-route trips 00000033, 00000054",88,202420,2160531,0.91,4.349,2.255,1.498,1.269,0.801,0.555,0.381

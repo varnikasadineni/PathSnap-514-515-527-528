@@ -1,4 +1,4 @@
-"""Hand-off H5 (Member C -> Member D): End-to-end inference pipeline.
+"""Hand-off H5 (Member C — Vibhav -> Member D — Guru): End-to-end inference pipeline.
 
 STRICT RULE: predict_trip(trip_dir) MUST NEVER read the .route file!
 """
@@ -35,7 +35,8 @@ def predict_trip(
         "runtime_sec": float,
         "points": [{"point_idx": int, "lon": float, "lat": float, "t": float, "arc_id": int}, ...],
         "predicted_arcs": [int, ...],          # length == len(track), one arc_id per GPS point
-        "compressed_route": [int, ...],        # deduplicated sequential arc_ids
+        "compressed_route": [int, ...],        # continuous reconstructed route (with bridges)
+        "raw_compressed_route": [int, ...],    # deduplicated pointwise arcs without bridges
         "predicted_arc_coords": [              # WGS84 line segments for UI map rendering
             {"arc_id": int, "coords": [[lat1, lon1], [lat2, lon2]]}, ...
         ],
@@ -73,17 +74,19 @@ def predict_trip(
         prob_col = "prob"
         mode = "classifier+hmm"
 
-    # 3. HMM + Viterbi decoding
-    pred_arcs, diagnostics = viterbi_decode_trip(
+    # 3. HMM + Viterbi decoding + continuous route bridging
+    pred_arcs, reconstructed_route, diagnostics = viterbi_decode_trip(
         trip,
         cand_df,
         prob_col=prob_col,
+        emission_weight=float(emit_cfg.get("emission_weight", 1.0)),
         sigma_m=float(emit_cfg.get("sigma_m", 15.0)),
         beta_m=float(trans_cfg.get("beta_m", 10.0)),
         max_route_dist_m=float(trans_cfg.get("max_route_dist_m", 500.0)),
         split_gap_sec=float(gap_cfg.get("split_gap_sec", 30.0)),
         disconnected_log_penalty=float(trans_cfg.get("disconnected_log_penalty", -25.0)),
         prob_eps=float(emit_cfg.get("prob_eps", 1e-6)),
+        bridge_max_dist_m=float(trans_cfg.get("bridge_max_dist_m", 400.0)),
     )
 
     # 4. Format coordinates for UI rendering
@@ -92,9 +95,9 @@ def predict_trip(
     from_nodes = trip.arcs["from_node"].to_numpy()
     to_nodes = trip.arcs["to_node"].to_numpy()
 
-    compressed = compress_arc_sequence(pred_arcs)
+    raw_compressed = compress_arc_sequence(pred_arcs)
     arc_coords = []
-    for aid in compressed:
+    for aid in reconstructed_route:
         u, v = int(from_nodes[aid]), int(to_nodes[aid])
         arc_coords.append(
             {
@@ -123,7 +126,8 @@ def predict_trip(
         "runtime_sec": round(time.perf_counter() - t0, 4),
         "points": points,
         "predicted_arcs": [int(a) for a in pred_arcs],
-        "compressed_route": compressed,
+        "compressed_route": reconstructed_route,
+        "raw_compressed_route": raw_compressed,
         "predicted_arc_coords": arc_coords,
         "diagnostics": diagnostics,
     }
