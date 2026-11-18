@@ -72,22 +72,46 @@ Trips span global coordinates (`Lon [-100.4, 137.2]`, `Lat [-34.6, 61.7]`). `pat
 
 ---
 
-## 3. Installation & Setup
+## 3. Installation & Full Reproduction Commands
 
-```bash
+```powershell
 # 1. Create and activate virtual environment
 python -m venv .venv
-# Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Place raw partitions locally (not tracked by git)
+# 3. Place raw partitions locally (gitignored)
 #    data/raw/train/           (80 trips)
 #    data/raw/student_test/    (10 trips)
-#    data/raw/evaluator_test/  (10 trips - on demo day)
+#    data/raw/evaluator_test/  (10 trips - demo day only)
 ```
+
+### Reproduce Every Result CSV, Figure & Map From Scratch
+```powershell
+# Stage 1 — Member A (EDA figures + H2 feature/point parquets + candidate miss rates)
+python -m pathsnap.eda_figures
+python -m pathsnap.build_dataset
+
+# Stage 2 — Member B (6-model GroupKFold(5) CV + Optuna Bayesian HPO -> models/final_model.joblib)
+python -m pathsnap.train --build --train-all --tune
+
+# Stage 3 — Member C (Phase 1 baseline, Phase 2 OOF HMM tuning & Classifier+HMM comparison + Folium maps)
+python -m pathsnap.eval_hmm --mode baseline
+python -m pathsnap.eval_hmm --mode tune --tune-trips 20
+python -m pathsnap.eval_hmm --mode classifier
+
+# Stage 4 — Member D (End-to-end 10-trip FastAPI verification & zero-leakage check)
+python tests/test_api.py
+```
+
+### Verified Final `student_test` Summary (10 Trips / 19,160 GPS Observations)
+| Pipeline | Obs Top-1 | Route Continuity | Route Length F1 | Mean Runtime |
+| :--- | :---: | :---: | :---: | :---: |
+| Nearest-Arc Baseline | `56.93%` | `45.75%` | `63.73%` | — |
+| Optuna-Tuned `HistGradientBoosting` Only | `83.45%` | `73.36%` | `84.90%` | `0.14 s` |
+| **PathSnap Final (Tuned Classifier + Tuned HMM)** | **`91.74%`** | **`99.67%`** | **`97.07%`** | **`0.79 s`** |
 
 ---
 

@@ -1,0 +1,20 @@
+{
+  "model": "HistGradientBoosting",
+  "best_params": {
+    "max_iter": 550,
+    "learning_rate": 0.0500593360411714,
+    "max_leaf_nodes": 73,
+    "max_depth": 6,
+    "min_samples_leaf": 197,
+    "l2_regularization": 1.1925527527380104,
+    "max_features": 0.645551186482927
+  },
+  "best_cv_top1": 0.803940653577165,
+  "n_trials": 15,
+  "n_complete": 15,
+  "n_pruned": 0,
+  "search_time_sec": 2050.808934699977,
+  "objective": "mean GroupKFold(3) Top-1 on training trips",
+  "sampler": "TPE (seed 42)",
+  "pruner": "MedianPruner"
+}
