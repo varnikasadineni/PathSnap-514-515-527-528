@@ -1,0 +1,22 @@
+partition,trip_id,issue,value,threshold,note
+train,00000004,irregular_timesteps,46.19,30,share of time steps that are not exactly 1 s (%)
+train,00000022,irregular_timesteps,46.93,30,share of time steps that are not exactly 1 s (%)
+train,00000025,irregular_timesteps,30.65,30,share of time steps that are not exactly 1 s (%)
+train,00000039,irregular_timesteps,41.71,30,share of time steps that are not exactly 1 s (%)
+train,00000046,irregular_timesteps,37.79,30,share of time steps that are not exactly 1 s (%)
+train,00000090,irregular_timesteps,41.87,30,share of time steps that are not exactly 1 s (%)
+train,00000078,large_time_gap,52810.0,3600,single time gap above threshold (s)
+train,00000090,large_time_gap,153064.0,3600,single time gap above threshold (s)
+train,00000033,off_route,122.38,50,median GPS-to-reference-route distance above threshold (m)
+train,00000054,off_route,138.51,50,median GPS-to-reference-route distance above threshold (m)
+train,00000002,route_not_connected,99.62,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000019,route_not_connected,99.45,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000033,route_not_connected,99.4,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000041,route_not_connected,99.71,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000042,route_not_connected,99.93,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000069,route_not_connected,99.79,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000075,route_not_connected,98.13,100,consecutive route arcs that do not share a node: % connected below 100
+student_test,00000076,route_not_connected,99.73,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000080,route_not_connected,99.28,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000086,route_not_connected,99.85,100,consecutive route arcs that do not share a node: % connected below 100
+train,00000089,route_not_connected,99.62,100,consecutive route arcs that do not share a node: % connected below 100
