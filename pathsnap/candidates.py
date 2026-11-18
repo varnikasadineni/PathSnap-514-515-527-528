@@ -128,55 +128,14 @@ def generate_candidates_for_trip(
 def align_track_to_route_monotonic(trip: TripData, window_ahead: int = 25) -> pd.DataFrame:
     """Assign each GPS point to its reference arc along `trip.route` monotonically.
 
+    Delegates directly to `align_track_to_route_dp` (globally optimal monotonic DP)
+    so Member A (`build_dataset.py`), Member B (`train.py`), Member C (`eval_hmm.py`),
+    and Member D (`api/main.py`) all use the exact same ground-truth point alignment.
+
     NEVER call this inside predict_trip() — only for training labels, student_test
     evaluation, and server-side scoring.
-
-    Returns DataFrame with columns: ['trip_id', 'point_idx', 'true_arc', 'route_pos', 'dist_to_route_m']
     """
-    if trip.route is None or len(trip.route) == 0:
-        raise ValueError(f"Trip {trip.trip_id} has no .route loaded.")
-
-    route = trip.route
-    n_route = len(route)
-    x1 = trip.arcs["x1"].to_numpy()[route]
-    y1 = trip.arcs["y1"].to_numpy()[route]
-    x2 = trip.arcs["x2"].to_numpy()[route]
-    y2 = trip.arcs["y2"].to_numpy()[route]
-
-    tx = trip.track["x"].to_numpy()
-    ty = trip.track["y"].to_numpy()
-    pidx = trip.track["point_idx"].to_numpy()
-
-    # Member A can refine this into full monotonic Viterbi/DP alignment if needed;
-    # windowed forward-only projection prevents loops & reverse twins from stealing points.
-    cur_pos = 0
-    rows = []
-    for i in range(len(tx)):
-        lo = cur_pos
-        hi = min(n_route, cur_pos + window_ahead)
-        dists, _ = point_to_segments_projection(
-            float(tx[i]), float(ty[i]), x1[lo:hi], y1[lo:hi], x2[lo:hi], y2[lo:hi]
-        )
-        best_rel = int(np.argmin(dists))
-        best_dist = float(dists[best_rel])
-
-        # If vehicle jumped ahead across a large GPS gap, search further forward
-        if best_dist > 150.0 and hi < n_route:
-            dists_full, _ = point_to_segments_projection(
-                float(tx[i]), float(ty[i]), x1[lo:], y1[lo:], x2[lo:], y2[lo:]
-            )
-            alt_rel = int(np.argmin(dists_full))
-            if float(dists_full[alt_rel]) + 25.0 < best_dist:
-                best_rel = alt_rel
-                best_dist = float(dists_full[alt_rel])
-
-        cur_pos = lo + best_rel
-        rows.append((trip.trip_id, int(pidx[i]), int(route[cur_pos]), int(cur_pos), best_dist))
-
-    return pd.DataFrame(
-        rows,
-        columns=["trip_id", "point_idx", "true_arc", "route_pos", "dist_to_route_m"],
-    )
+    return align_track_to_route_dp(trip)
 
 
 def align_track_to_route_dp(trip: TripData, cap_m: float = 100.0) -> pd.DataFrame:
